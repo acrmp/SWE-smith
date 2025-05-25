@@ -45,6 +45,7 @@ from swesmith.constants import LOG_DIR_BUG_GEN, PREFIX_BUG, PREFIX_METADATA
 from swesmith.utils import clone_repo
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -54,13 +55,19 @@ logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 litellm.suppress_debug_info = True
 random.seed(24)
 
-
-def get_function_signature(node):
-    """Generate the function signature as a string."""
-    args = [ast.unparse(arg) for arg in node.args.args]  # For Python 3.9+
-    args_str = ", ".join(args)
-    return f"def {node.name}({args_str})"
-
+def find_go_candidates(repo) -> str:
+    """
+    Identify the Go candidates for a repository
+    """
+    go_cmd = subprocess.run(
+            ["buggengo", "rewrite-candidates", repo],
+            capture_output=True,
+            check=True,
+        )
+    go_candidates = json.loads(go_cmd.stdout)
+    for i in range(len(go_candidates)):
+        go_candidates[i] = SimpleNamespace(**go_candidates[i], indent_level = 0, indent_size = 0)
+    return go_candidates
 
 def main(
     repo: str,
@@ -76,11 +83,7 @@ def main(
     print(f"Cloning {repo}...")
     clone_repo(repo)
     print(f"Extracting entities from {repo}...")
-    candidates = [
-        x
-        for x in extract_entities_from_directory(repo, entity_type)
-        if filter_min_simple_complexity(x, 3)
-    ]
+    candidates = find_go_candidates(repo)
     if max_bugs:
         random.shuffle(candidates)
         candidates = candidates[:max_bugs]
@@ -92,9 +95,9 @@ def main(
     if not redo_existing:
         print("Skipping existing bugs.")
 
-    def _process_candidate(candidate: CodeEntity) -> dict[str, Any]:
+    def _process_candidate(candidate) -> dict[str, Any]:
         bug_dir = (
-            log_dir / candidate.file_path.replace("/", "__") / candidate.src_node.name
+            log_dir / candidate.file_path.replace("/", "__") / candidate.func_name
         )
         if not redo_existing:
             if bug_dir.exists() and any(
@@ -105,22 +108,11 @@ def main(
             ):
                 return {"n_bugs_generated": 0, "cost": 0.0}
 
-        try:
-            # Blank out the function body
-            blank_function = BugRewrite(
-                rewrite=strip_function_body(candidate.src_code),
-                explanation="Blanked out the function body.",
-                strategy=LM_REWRITE,
-            )
-            apply_code_change(candidate, blank_function)
-        except Exception:
-            return {"n_generation_failed": 1, "cost": 0.0}
-
         # Get prompt content
         prompt_content = {
-            "func_signature": get_function_signature(candidate.src_node),
-            "func_to_write": blank_function.rewrite,
-            "file_src_code": open(candidate.file_path).read(),
+            "func_signature": candidate.func_signature,
+            "func_to_write": candidate.func_to_write,
+            "file_src_code": candidate.file_src_code,
         }
 
         # Generate a rewrite
