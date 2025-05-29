@@ -67,6 +67,10 @@ DEFAULT_SPECS = {
     KEY_TEST_CMD: TEST_PYTEST,
 }
 
+GO_SPECS = {
+    KEY_TEST_CMD: "go test -v ./...",
+}
+
 CMAKE_VERSIONS = ["3.15.7", "3.16.9", "3.17.5", "3.19.7", "3.23.5", "3.27.9"]
 INSTALL_CMAKE = (
     [
@@ -197,6 +201,7 @@ SPECS_REPO_FVCORE = {
         ],
     }
 }
+SPECS_REPO_GIN = {"61c2b1c28f0c5a754330545e31f02cd6d6f7944e": GO_SPECS}
 SPECS_REPO_GLOM = {"fb3c4e76f28816aebfd2538980e617742e98a7c2": DEFAULT_SPECS}
 SPECS_REPO_GPXPY = {
     "09fc46b3cad16b5bf49edf8e7ae873794a959620": {
@@ -583,6 +588,7 @@ MAP_REPO_TO_SPECS = {
     "gawel/pyquery": SPECS_REPO_PYQUERY,
     "getmoto/moto": SPECS_REPO_MOTO,
     "getnikola/nikola": SPECS_REPO_NIKOLA,
+    "gin-gonic/gin": SPECS_REPO_GIN,
     "google/textfsm": SPECS_REPO_TEXTFSM,
     "graphql-python/graphene": SPECS_REPO_GRAPHENE,
     "gruns/furl": SPECS_REPO_FURL,
