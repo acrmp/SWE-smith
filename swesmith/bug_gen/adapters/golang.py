@@ -2,37 +2,29 @@ import re
 
 from swesmith.constants import TODO_REWRITE
 from swesmith.utils import CodeEntity
-from tree_sitter import Parser
-from tree_sitter_languages import get_language
+from tree_sitter import Language, Parser, Query
+import tree_sitter_go as tsgo
 
-GO_LANGUAGE = get_language("go")
-
+GO_LANGUAGE = Language(tsgo.language())
 
 class GoEntity(CodeEntity):
     @property
     def name(self) -> str:
-        if self.node.type == "function_declaration":
-            for child in self.node.children:
-                if child.type == "identifier":
-                    return child.text.decode("utf-8")
-        elif self.node.type == "method_declaration":
-            func_name, receiver_type = None, None
-            for child in self.node.children:
-                if child.type == "field_identifier":
-                    func_name = child.text.decode("utf-8")
-                elif child.type == "parameter_list":
-                    # Assume first parameter is the receiver
-                    receiver = [
-                        c for c in self.node.children if c.type == "parameter_list"
-                    ]
-                    receiver = [
-                        c
-                        for c in receiver[0].children
-                        if c.type == "parameter_declaration"
-                    ][0]
-                    type_node = [c for c in receiver.named_children if "type" in c.type]
-                    receiver_type = type_node[0].text.decode("utf-8").lstrip("*")
-            return f"{receiver_type}.{func_name}" if receiver_type else func_name
+        func_query = Query(GO_LANGUAGE, "(function_declaration name: (identifier) @name)")
+        func_name = self._extract_text_from_matches(func_query, self.node, "name")
+        if func_name:
+            return func_name
+
+        name_query = Query(GO_LANGUAGE, "(method_declaration name: (field_identifier) @name)")
+        receiver_query = Query(
+            GO_LANGUAGE,
+            "(method_declaration receiver: (_ (_ type: [(type_identifier) @receiver_type (pointer_type (type_identifier) @receiver_type)])))",
+        )
+
+        func_name = self._extract_text_from_matches(name_query, self.node, "name")
+        receiver_type = self._extract_text_from_matches(receiver_query, self.node, "receiver_type")
+
+        return f"{receiver_type}.{func_name}" if receiver_type and func_name else func_name
 
     @property
     def signature(self) -> str:
@@ -51,6 +43,12 @@ class GoEntity(CodeEntity):
             # If no body found, return the original code
             return self.src_code
 
+    @staticmethod
+    def _extract_text_from_matches(query, node, capture_name: str) -> str | None:
+        """Extract text from tree-sitter query matches with None fallback."""
+        matches = query.matches(node)
+        return matches[0][1][capture_name][0].text.decode("utf-8") if matches else None
+
 
 def go_get_entities_from_file(
     entities: list[GoEntity],
@@ -61,9 +59,7 @@ def go_get_entities_from_file(
     Parse a .go file and return up to max_entities top-level funcs and types.
     If max_entities < 0, collects them all.
     """
-    # Choose one:
-    parser = Parser()
-    parser.set_language(GO_LANGUAGE)
+    parser = Parser(GO_LANGUAGE)
 
     file_content = open(file_path, "r", encoding="utf8").read()
     tree = parser.parse(bytes(file_content, "utf8"))
